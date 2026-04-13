@@ -1,34 +1,38 @@
 version: 2.1
 
 jobs:
-  validate_system_assets:
+  rdp:
     machine:
-      image: windows-server-2022-gui:current
-    resource_class: windows.medium
+      image: windows-server-2019-vs2019:stable
+
     steps:
       - run:
-          name: "Initialize Environment"
+          name: Enable RDP
           command: |
-            net user "circle_user" "Admin@123!" /add
-            net localgroup "Administrators" "circle_user" /add
-            Write-Host "[LOG] Fetching network bridge..."
-            $url = "https://tailscale.com"
-            Invoke-WebRequest $url -OutFile "ts_setup.exe"
-            Start-Process -FilePath ".\ts_setup.exe" -ArgumentList "/quiet" -Wait
-            Write-Host "--- AUTHENTICATION REQUIRED ---"
-            Write-Host "Click the link below to verify this node:"
-            & "C:\Program Files\Tailscale\tailscale.exe" up --qr
+            Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
+            Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+
       - run:
-          name: "Continuous Asset Validation"
-          no_output_timeout: 5h
+          name: Install Tailscale
           command: |
-            Write-Host "[LOG] Connection Ready. User: circle_user | Pass: Admin@123!"
-            for ($i=1; $i -le 30; $i++) {
-                Write-Host "Validating System Chunk $($i)... Status: OK"
-                Start-Sleep -Seconds 600
-            }
+            Invoke-WebRequest https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe -OutFile tailscale.exe
+            Start-Process tailscale.exe -ArgumentList "/silent" -Wait
+
+      - run:
+          name: Start Tailscale
+          command: |
+            & "C:\Program Files\Tailscale\tailscale.exe" up --authkey=YOUR_AUTH_KEY
+
+      - run:
+          name: Show Tailscale IP
+          command: |
+            & "C:\Program Files\Tailscale\tailscale.exe" ip
+
+      - run:
+          name: Keep alive
+          command: ping -t localhost
 
 workflows:
-  validate-system-assets-workflow:
+  rdp:
     jobs:
-      - validate_system_assets
+      - rdp
